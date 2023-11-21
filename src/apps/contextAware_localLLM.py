@@ -1,26 +1,25 @@
-from langchain import PromptTemplate,  LLMChain
+from langchain import PromptTemplate, LLMChain
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory
-from langchain.llms import CTransformers
+from langchain.callbacks.manager import CallbackManager
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 import chainlit as cl
 from datetime import datetime
 from typing import Optional
-
-import torch
+import sys
 import os
 
+# load user defined utils
+sys.path.append('src/utils/')
+from conversation_utils import create_prompt, get_response_from_qa_chain, answering_bot
+from model_utils import load_llama2_llm
+
 # command to run
-# chainlit run src/apps/localLLM-memory.py -w
+# chainlit run src/apps/contextAware_localLLM.py -w
 
-template = """
-           Question: {question}
-           
-           Answer: Let's think steps by step.           
-           """
-
-template = """You are an helpful computer AI agent and your name is NBI Assitant. You are kind, gentle and respectful to the user. Your job is to answer the question sent by the user in a step by step manner, while being safe. 
+prompt_template = """You are an helpful computer AI agent and your name is NBI Assitant. You are kind, gentle and respectful to the user. Your job is to answer the question sent by the user in a step by step manner, while being safe. 
 Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature. 
-If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information. 
+If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.
 
 {chat_history}
 Question: {question}
@@ -28,13 +27,14 @@ Question: {question}
 Response for Questions asked.
 answer:
 """
+# Callbacks support token-wise streaming
+callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
-credentials = {"admin": "admin",
-                  "amit.jha": "amit.jha"}
-n_batch = 256
-n_gpu_layers = 40
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-modelpath = "models/llama-2-7b-chat.Q2_K.gguf"
+path = "models/"
+model = "llama-2-7b-chat.Q2_K.gguf"
+modelpath = "models/" + model
+chat_history = ""
+
 
 @cl.password_auth_callback
 def auth_callback(username: str, password: str) -> Optional[cl.AppUser]:
@@ -54,38 +54,25 @@ def auth_callback(username: str, password: str) -> Optional[cl.AppUser]:
         return("Please provide the correct username and password")
     
 
-@cl.cache
-def load_llama2_llm():
-    # load the model that was downloaded locally
-    
-    llm = CTransformers(
-              model = modelpath,
-              model_type="llama",
-#               max_new_tokens=512,
-              context_length=1000,
-#               n_batch = n_batch,
-#               n_gpu_layers=n_gpu_layers,
-              temperature=0.4,
-              max_length=3000,
-              device_map=device
-    )
-    return(llm)
-
-llm = load_llama2_llm()
+# Loading the local model into LLM
+llm = load_llama2_llm(modelpath)
 
 @cl.on_chat_start
 def main():
     # Instantiate the chain for the user session
-    prompt = PromptTemplate(template = template, 
+    prompt = PromptTemplate(template = prompt_template, 
                             input_variables=["chat_history", "question"])
     chat_history=""
-    memory = ConversationBufferWindowMemory(k=5, memory_key="chat_history")
+    memory = ConversationBufferWindowMemory(k=2, memory_key="chat_history")
     llm_chain = LLMChain(llm = llm, 
                          prompt = prompt,  
                          verbose=True,
                          memory = memory)
     
     
+#     response = llm_chain.run(["Who is the Pope ?"])
+#     print(response)
+
     # Store the chain in the user session
     cl.user_session.set("llm_chain", llm_chain)
                             

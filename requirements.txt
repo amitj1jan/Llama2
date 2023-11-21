@@ -1,5 +1,5 @@
 torch
-llama_index
 langchain
 chainlit
-
+transformers
+llama_index

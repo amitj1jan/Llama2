@@ -1,7 +1,18 @@
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
-from langchain.chains import RetrievalQA
-from langchain import PromptTemplate
+from langchain.chains import RetrievalQA, StuffDocumentsChain, LLMChain, ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+from langchain.schema import SystemMessage
+from langchain.prompts import PromptTemplate
+from langchain.prompts import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
+    SystemMessagePromptTemplate,
+    
+)
+
+# Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature. 
 
 custom_prompt_template = """You are an helpful computer AI agent and your name is NBI Assitant. You are kind, gentle and respectful to the user. Your job is to answer the question sent by the user in a step by step manner, while being safe. 
 Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature. 
@@ -22,18 +33,21 @@ def create_prompt(prompt_template):
     
     prompt = PromptTemplate(template=prompt_template,
                            input_variables=['context', 'question'])
+    
     return(prompt)
 
 
 # retrieval Chain
-def get_response_from_qa_chain(llm, prompt, db):
-    retrieval_chain = RetrievalQA.from_chain_type(llm=llm,
+def get_response_from_qa_chain(llm, memory, prompt, db):    
+    retrieval_chain = ConversationalRetrievalChain.from_llm(
+                                       llm=llm,
                                        chain_type="stuff",
                                        retriever=db.as_retriever(search_kwargs={'k': 1}),
-                                       return_source_documents=True,
-                                       chain_type_kwargs={'prompt': prompt}
-                                       )
-    
+                                        memory = memory,
+                                        combine_docs_chain_kwargs={"prompt": prompt},
+                                        max_tokens_limit=256                                       
+                                        )
+        
     return(retrieval_chain)
 
 
@@ -43,6 +57,8 @@ def answering_bot(llm, db_faiss_path):
                                       model_kwargs={'device': 'cuda'})
     
     vectorstore = FAISS.load_local(db_faiss_path, embeddings)
+    
+    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
     message_prompt = create_prompt(custom_prompt_template)
-    response = get_response_from_qa_chain(llm, message_prompt, vectorstore)
+    response = get_response_from_qa_chain(llm, memory, message_prompt, vectorstore)
     return(response)
